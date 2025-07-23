@@ -815,7 +815,7 @@ export default class Task extends ETL {
             // Prepare the feature properties
             const properties: FeatureProperties = {
                 type: 'a-f-A' + ac_civmil + ac_type,
-                callsign: (ac.flight || '').trim(),
+                callsign: (ac.callsign || ac.flight || '').trim(),
                 time: new Date(Date.now() - (ac.seen_pos * 1000)),
                 start: new Date(Date.now() - (ac.seen_pos * 1000)),
                 speed: (typeof ac.gs === 'number' ? ac.gs * KNOTS_TO_MPS : Number.NaN), // Use NaN for unknown speed per CoT spec
