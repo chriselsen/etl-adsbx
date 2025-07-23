@@ -94,7 +94,7 @@ const VALID_ICON_GROUPS = new Set([
 const Env = Type.Object({
     'Query_LatLon': Type.String({
         description: 'Lat, Lon value to use for centering the API request',
-        default: '-41.29,174.78'
+        default: '37.1841,-119.4696'
     }),
     'Query_Dist': Type.String({
         description: 'Distance from the provided Lat, Lon location in nautical miles (NM) to provide results',
@@ -110,7 +110,7 @@ const Env = Type.Object({
     'ADSBX_Token': Type.String({ description: 'API Token for ADSBExchange' }),
     'ADSBX_Filtering': Type.Boolean({
         description: 'Only show aircraft from the ADSBX_Includes list. This is useful for filtering out large amounts of aircraft in an area.',
-        default: false
+        default: true
     }),
     'ADSBX_Use_Icon': Type.Boolean({ 
         description: 'Change aircraft icon based on the group provided in ADSBX_Includes, even when filtering is disabled.',
@@ -121,8 +121,10 @@ const Env = Type.Object({
             description: 'Public Safety domain of the Aircraft',
             enum: ['EMS', 'FIRE', 'LAW', 'FED', 'MIL'],
         }),
+        agency: Type.Optional(Type.String({ description: 'Agency operating the aircraft.' })),
         ICAO_hex: Type.Optional(Type.String({ description: 'ICAO hex code of the Aircraft.' })),
         registration: Type.Optional(Type.String({ description: 'Registration Number of the Aircraft.' })),
+        callsign: Type.Optional(Type.String({ description: 'Call sign of the Aircraft.' })),
         group: Type.String({
             description: 'Category of Aircraft. This is used to determine the icon to use for the aircraft.',
             default: 'UNKNOWN',
@@ -181,25 +183,10 @@ const Env = Type.Object({
                 'MIL_ROTOR_ISR_RESCUE'
             ]
         }),
-        type: Type.Optional(Type.String({ description: 'Custom CoT type. E.g. a-f-A-M-F-C-H' })),
+        cot_type: Type.Optional(Type.String({ description: 'Custom CoT type. E.g. a-f-A-M-F-C-H' })),
         comments: Type.Optional(Type.String({ description: 'Additional comments.' })),
     })),
-    'ADSBX_Emergency_Alert': Type.Boolean({
-        description: 'Use alert attribute to highlight aircraft in emergency status',
-        default: true
-    }),
-    'ADSBX_Ignore_Tower_Vehicles': Type.Boolean({
-        description: 'Ignore tower vehicles (TWR) and ground vehicles (GND).',
-        default: true
-    }),
-    'ADSBX_ICAOHex_Domestic_Start': Type.String({ 
-        description: 'ICAO HEX start value for domestic flights. E.g. A00000 for USA or C80000 for NZ.', 
-        default: 'C80000'
-    }),
-    'ADSBX_ICAOHex_Domestic_End': Type.String({ 
-        description: 'ICAO HEX start value for domestic flights. E.g. AFFFFF for USA or C87FFF for NZ.', 
-        default: 'AFFFFF'
-    }),
+
     'DEBUG': Type.Boolean({ 
         description: 'Print ADSBX results in logs.', 
         default: false })
@@ -234,6 +221,8 @@ interface AircraftData {
     group?: string;
     cot_type?: string;
     comments?: string;
+    callsign?: string;
+    agency?: string;
 }
 
 // Define a more flexible schema for ADSBExchange API responses
@@ -430,6 +419,10 @@ export default class Task extends ETL {
     static name = 'etl-adsbx'
     static flow = [ DataFlowType.Incoming ];
     static invocation = [ InvocationType.Schedule ];
+    
+    constructor(url?: string) {
+        super(url);
+    }
 
     async schema(
         type: SchemaType = SchemaType.Input,
@@ -525,7 +518,7 @@ export default class Task extends ETL {
         for (const ac of body.ac) {
             if (!ac.flight && !ac.r) continue;
 
-            if (env.ADSBX_Ignore_Tower_Vehicles && (ac.r == 'TWR' || ac.r == 'GND' || ac.type == 'adsb_icao_nt' )) continue; // Ignore tower, ground vehicles and test equipment
+            // No longer filtering tower vehicles
 
             const id = (ac.r || ac.flight).toLowerCase().trim();
             const coordinates = [ac.lon, ac.lat];
@@ -575,55 +568,12 @@ export default class Task extends ETL {
                     break;
             }
 
-            // Helper function to safely compare ICAO hex codes
-            // Converts hex strings to integers for proper numerical comparison
-            function isHexInRange(hex: string, startHex: string, endHex: string): boolean {
-                if (!hex) return false;
-                
-                // Normalize hex strings: remove whitespace, convert to uppercase, ensure 6 characters
-                const normalizeHex = (h: string) => {
-                    h = h.trim().toUpperCase();
-                    // Pad with leading zeros if shorter than 6 characters
-                    return h.padStart(6, '0');
-                };
-                
-                const hexNorm = normalizeHex(hex);
-                const startNorm = normalizeHex(startHex);
-                const endNorm = normalizeHex(endHex);
-                
-                // Convert hex strings to integers for numerical comparison
-                const hexVal = parseInt(hexNorm, 16);
-                const startVal = parseInt(startNorm, 16);
-                const endVal = parseInt(endNorm, 16);
-                
-                return hexVal >= startVal && hexVal <= endVal;
-            }
-            
-            // Determine whether the aircraft is a domestic or foreign flight
-            // Based on the ICAO Hex code, which is a 6-character alphanumeric code assigned to each aircraft
-            // https://www.aerotransport.org/html/ICAO_hex_decode.html
-            let ac_affiliation;
-            if (ac.hex && isHexInRange(ac.hex, env.ADSBX_ICAOHex_Domestic_Start, env.ADSBX_ICAOHex_Domestic_End)) {
-                ac_affiliation = '-f'; // Friendly (Local civilian)
-            } else {
-                ac_affiliation = '-n'; // Neutral (Foreign civilian)
-            }
-
             // Determine whether the aircraft is civilian or military
             // https://www.adsbexchange.com/version-2-api-wip/
             let ac_civmil = '-C'; // Civilian
             if (ac.dbFlags !== undefined && ac.dbFlags % 2 !== 0) {
                 ac_civmil = '-M'; // Military
-                if (ac.hex && isHexInRange(ac.hex, env.ADSBX_ICAOHex_Domestic_Start, env.ADSBX_ICAOHex_Domestic_End)) {
-                    ac_affiliation = '-f'; // Friendly (Local Military)
-                } else {
-                    ac_affiliation = '-u'; // Unknown (Foreign Military)
-                }
             }
-
-            // Determine whether the aircraft is in emergency mode
-            // https://www.adsbexchange.com/version-2-api-wip/
-            const isEmergency = ac.emergency !== undefined && ac.emergency !== 'none';
             
             // Check if this aircraft is in our includes list by ICAO hex first, then registration
             let include;
@@ -642,11 +592,25 @@ export default class Task extends ETL {
                 if (include.group !== undefined) {
                     ac.group = include.group;
                 }
-                if (include.type !== undefined) {
-                    ac.cot_type = include.type;
+                if (include.cot_type !== undefined) {
+                    ac.cot_type = include.cot_type;
                 }
                 if (include.comments !== undefined) {
                     ac.comments = include.comments;
+                }
+                if (include.callsign !== undefined) {
+                    // Check if the callsign contains $CALLSIGN placeholder
+                    if (include.callsign.includes('$CALLSIGN')) {
+                        // Replace $CALLSIGN with the actual flight callsign from the API
+                        const apiCallsign = ac.flight ? ac.flight.trim() : '';
+                        ac.callsign = include.callsign.replace('$CALLSIGN', apiCallsign);
+                    } else {
+                        // Use the callsign from ADSBX_Includes directly
+                        ac.callsign = include.callsign;
+                    }
+                }
+                if (include.agency !== undefined) {
+                    ac.agency = include.agency;
                 }
             }
 
@@ -675,6 +639,16 @@ export default class Task extends ETL {
                     'Squawk': (aircraft.squawk || 'Unknown').trim()
                 };
                 
+                // Add callsign if available
+                if (aircraft.callsign) {
+                    remarksObj['Callsign'] = aircraft.callsign.trim();
+                }
+                
+                // Add agency if available
+                if (aircraft.agency) {
+                    remarksObj['Agency'] = aircraft.agency.trim();
+                }
+                
                 // Add altitude information
                 if (aircraft.alt_baro !== undefined) {
                     remarksObj['Alt Baro'] = typeof aircraft.alt_baro === 'number' ? 
@@ -697,7 +671,7 @@ export default class Task extends ETL {
                 
                 // Build remarks string with a specific order
                 const orderedKeys = [
-                    'Flight', 'Registration', 'Type', 'Category', 
+                    'Flight', 'Callsign', 'Registration', 'Agency', 'Type', 'Category', 
                     'Alt Baro', 'Alt Geom', 'Emergency', 'Squawk', 'Group', 'Comments'
                 ];
                 
@@ -709,7 +683,7 @@ export default class Task extends ETL {
             
             // Prepare the feature properties
             const properties: FeatureProperties = {
-                type: 'a' + ac_affiliation + '-A' + ac_civmil + ac_type,
+                type: 'a-f-A' + ac_civmil + ac_type,
                 callsign: (ac.flight || '').trim(),
                 time: new Date(Date.now() - (ac.seen_pos * 1000)),
                 start: new Date(Date.now() - (ac.seen_pos * 1000)),
@@ -719,12 +693,7 @@ export default class Task extends ETL {
                 remarks: buildRemarks(ac)
             };
             
-            // Add alert attribute for emergency aircraft if configured
-            if (isEmergency && env.ADSBX_Emergency_Alert) {
-                properties.detail = {
-                    alert: "red" // Use red alert level for emergency aircraft
-                };
-            }
+            // Emergency alert feature removed
             
             ids.set(id, {
                 id: id,
@@ -789,7 +758,7 @@ export default class Task extends ETL {
             
             // Rebuild remarks string with a specific order
             const orderedKeys = [
-                'Flight', 'Registration', 'Type', 'Category', 
+                'Flight', 'Callsign', 'Registration', 'Agency', 'Type', 'Category', 
                 'Alt Baro', 'Alt Geom', 'Emergency', 'Squawk', 'Group', 'Comments'
             ];
             
@@ -858,6 +827,55 @@ export default class Task extends ETL {
                             }
                         }
                         
+                        // Update callsign if provided
+                        if (include.callsign !== undefined) {
+                            const ac = feat.properties.metadata;
+                            let finalCallsign = include.callsign;
+                            
+                            // Check if the callsign contains $CALLSIGN placeholder
+                            if (include.callsign.includes('$CALLSIGN')) {
+                                // Replace $CALLSIGN with the actual flight callsign from the API
+                                const apiCallsign = ac.flight ? ac.flight.trim() : '';
+                                finalCallsign = include.callsign.replace('$CALLSIGN', apiCallsign);
+                            }
+                            
+                            // Update the metadata with the processed callsign
+                            feat.properties.metadata.callsign = finalCallsign;
+                            
+                            // Update remarks with the callsign
+                            if (finalCallsign) {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Callsign': finalCallsign.trim() }
+                                );
+                            } else {
+                                // Remove Callsign field if empty
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Callsign': null }
+                                );
+                            }
+                        }
+                        
+                        // Update agency if provided
+                        if (include.agency !== undefined) {
+                            feat.properties.metadata.agency = include.agency;
+                            
+                            // Update remarks with the agency
+                            if (include.agency) {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Agency': include.agency.trim() }
+                                );
+                            } else {
+                                // Remove Agency field if empty
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Agency': null }
+                                );
+                            }
+                        }
+                        
                         processedIds.add(id);
                         features.push(feat);
                     }
@@ -907,6 +925,55 @@ export default class Task extends ETL {
                             feat.properties.remarks = updateRemarks(
                                 feat.properties.remarks, 
                                 { 'Comments': null }
+                            );
+                        }
+                    }
+                    
+                    // Update callsign if provided
+                    if (include && include.callsign !== undefined) {
+                        const ac = feat.properties.metadata;
+                        let finalCallsign = include.callsign;
+                        
+                        // Check if the callsign contains $CALLSIGN placeholder
+                        if (include.callsign.includes('$CALLSIGN')) {
+                            // Replace $CALLSIGN with the actual flight callsign from the API
+                            const apiCallsign = ac.flight ? ac.flight.trim() : '';
+                            finalCallsign = include.callsign.replace('$CALLSIGN', apiCallsign);
+                        }
+                        
+                        // Update the metadata with the processed callsign
+                        feat.properties.metadata.callsign = finalCallsign;
+                        
+                        // Update remarks with the callsign
+                        if (finalCallsign) {
+                            feat.properties.remarks = updateRemarks(
+                                feat.properties.remarks, 
+                                { 'Callsign': finalCallsign.trim() }
+                            );
+                        } else {
+                            // Remove Callsign field if empty
+                            feat.properties.remarks = updateRemarks(
+                                feat.properties.remarks, 
+                                { 'Callsign': null }
+                            );
+                        }
+                    }
+                    
+                    // Update agency if provided
+                    if (include && include.agency !== undefined) {
+                        feat.properties.metadata.agency = include.agency;
+                        
+                        // Update remarks with the agency
+                        if (include.agency) {
+                            feat.properties.remarks = updateRemarks(
+                                feat.properties.remarks, 
+                                { 'Agency': include.agency.trim() }
+                            );
+                        } else {
+                            // Remove Agency field if empty
+                            feat.properties.remarks = updateRemarks(
+                                feat.properties.remarks, 
+                                { 'Agency': null }
                             );
                         }
                     }

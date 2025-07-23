@@ -20,7 +20,7 @@
         "typescript-eslint": "^8.0.0"
     },
     "dependencies": {
-        "@sinclair/typebox": "^0.34.0",
-        "@tak-ps/etl": "^9.9.0"
+        "@sinclair/typebox": "^0.34.38",
+        "@tak-ps/etl": "^9.18.0"
     }
 }
