@@ -65,7 +65,7 @@
 
 ## Deployment
 
-Deployment into the CloudTAK environment for ETL tasks is done via automatic releases to the TAK.NZ AWS environment.
+Deployment into the CloudTAK environment for ETL tasks is done via automatic releases to the CAL-OES AWS environment.
 
 Github actions will build and push docker releases on every version tag which can then be automatically configured via the
 CloudTAK API.
@@ -101,7 +101,7 @@ These variables and secrets can be set in the GitHub organization or repository 
 For manual deployment you can use the `scripts/etl/deploy-etl.sh` script from the [CloudTAK](https://github.com/TAK-NZ/CloudTAK/) repo.
 As an example: 
 ```
-../CloudTAK/scripts/etl/deploy-etl.sh Demo v1.0.0 --profile tak-nz-demo
+../CloudTAK/scripts/etl/deploy-etl.sh Demo v1.0.0 --profile tak-demo
 ```
 
 ### CloudTAK Configuration
@@ -115,7 +115,7 @@ This will ensure proper visual identification and documentation for the task in 
 
 ## Development
 
-TAK.NZ provided Lambda ETLs are currently all written in [NodeJS](https://nodejs.org/en) through the use of a AWS Lambda optimized
+CAL-OES provided Lambda ETLs are currently all written in [NodeJS](https://nodejs.org/en) through the use of a AWS Lambda optimized
 Docker container. Documentation for the Dockerfile can be found in the [AWS Help Center](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
 
 ```sh
