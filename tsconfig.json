@@ -18,6 +18,8 @@
         }
     },
     "include": [
-        "task.ts"
+        "task.ts",
+        "csv-parser.ts",
+        "gdrive-helper.ts"
     ]
 }

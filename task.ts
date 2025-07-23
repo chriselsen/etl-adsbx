@@ -9,6 +9,8 @@
 import { Static, Type, TSchema } from '@sinclair/typebox';
 import { fetch } from '@tak-ps/etl'
 import ETL, { Event, SchemaType, handler as internal, local, InvocationType, DataFlowType, InputFeatureCollection } from '@tak-ps/etl';
+import { parseCSV } from './csv-parser.js';
+import { downloadFromGoogleDrive } from './gdrive-helper.js';
 
 /**
  * Constants used throughout the ETL task
@@ -185,6 +187,10 @@ const Env = Type.Object({
         }),
         cot_type: Type.Optional(Type.String({ description: 'Custom CoT type. E.g. a-f-A-M-F-C-H' })),
         comments: Type.Optional(Type.String({ description: 'Additional comments.' })),
+    })),
+    'ADSBX_Includes_URL': Type.Optional(Type.String({
+        description: 'URL to a CSV file containing aircraft to include. This will be merged with ADSBX_Includes.',
+        default: ''
     })),
 
     'DEBUG': Type.Boolean({ 
@@ -495,12 +501,137 @@ export default class Task extends ETL {
             return;
         }
 
+        
         // Create lookup maps for registrations and ICAO hex codes (for efficient matching)
         // These maps are used both for updating aircraft details and for filtering
         // Creating them once here avoids duplicating the code and improves performance
         const includesMap = new Map();
         const hexMap = new Map();
-        for (const include of env.ADSBX_Includes) {
+        
+        // Process the includes from the configuration
+        let allIncludes = [...env.ADSBX_Includes];
+        
+        // If a URL is provided, fetch and parse the CSV file
+        if (env.ADSBX_Includes_URL) {
+            try {
+                console.log(`[CSV] Starting download from URL: ${env.ADSBX_Includes_URL}`);
+                
+                // Handle Google Drive URLs specially
+                let csvUrl = env.ADSBX_Includes_URL;
+                let isGoogleDrive = false;
+                
+                if (csvUrl.includes('drive.google.com')) {
+                    isGoogleDrive = true;
+                    console.log(`[CSV] Detected Google Drive URL`);
+                    
+                    // If it's already in export format, use it directly
+                    if (!csvUrl.includes('export=download')) {
+                        // Extract the file ID
+                        let fileId = '';
+                        
+                        // Handle different Google Drive URL formats
+                        if (csvUrl.includes('id=')) {
+                            // Format: https://drive.google.com/uc?id=FILE_ID
+                            fileId = csvUrl.split('id=')[1].split('&')[0];
+                            console.log(`[CSV] Extracted file ID from uc?id= format: ${fileId}`);
+                        } else if (csvUrl.includes('/file/d/')) {
+                            // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+                            fileId = csvUrl.split('/file/d/')[1].split('/')[0];
+                            console.log(`[CSV] Extracted file ID from /file/d/ format: ${fileId}`);
+                        } else if (csvUrl.includes('/d/')) {
+                            // Alternative format: https://drive.google.com/d/FILE_ID/
+                            fileId = csvUrl.split('/d/')[1].split('/')[0];
+                            console.log(`[CSV] Extracted file ID from /d/ format: ${fileId}`);
+                        }
+                        
+                        if (fileId) {
+                            // Use the direct download URL format
+                            const oldUrl = csvUrl;
+                            csvUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+                            console.log(`[CSV] Converted Google Drive URL:\n  From: ${oldUrl}\n  To: ${csvUrl}`);
+                        } else {
+                            console.log(`[CSV] WARNING: Could not extract file ID from Google Drive URL`);
+                        }
+                    }
+                }
+                
+                console.log(`[CSV] Sending fetch request to: ${csvUrl}`);
+                
+                let csvData;
+                
+                // Use specialized Google Drive download helper for Google Drive URLs
+                if (isGoogleDrive) {
+                    console.log(`[CSV] Using specialized Google Drive download helper`);
+                    try {
+                        csvData = await downloadFromGoogleDrive(env.ADSBX_Includes_URL);
+                        console.log(`[CSV] Successfully downloaded data using Google Drive helper`);
+                    } catch (driveError) {
+                        console.error(`[CSV] Google Drive helper failed: ${driveError.message}`);
+                        console.log(`[CSV] Falling back to standard fetch method`);
+                        
+                        // Fall back to standard fetch
+                        const csvResponse = await fetch(csvUrl, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
+                            }
+                        });
+                        
+                        console.log(`[CSV] Fetch response status: ${csvResponse.status} ${csvResponse.statusText}`);
+                        
+                        if (!csvResponse.ok) {
+                            throw new Error(`Failed to fetch CSV: ${csvResponse.status} ${csvResponse.statusText}`);
+                        }
+                        
+                        csvData = await csvResponse.text();
+                    }
+                } else {
+                    // Standard fetch for non-Google Drive URLs
+                    const csvResponse = await fetch(csvUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
+                        }
+                    });
+                    
+                    console.log(`[CSV] Fetch response status: ${csvResponse.status} ${csvResponse.statusText}`);
+                    
+                    if (!csvResponse.ok) {
+                        throw new Error(`Failed to fetch CSV: ${csvResponse.status} ${csvResponse.statusText}`);
+                    }
+                    
+                    csvData = await csvResponse.text();
+                }
+                console.log(`[CSV] Received data length: ${csvData.length} characters`);
+                
+                // Log the first 100 characters to help debug
+                if (csvData.length > 0) {
+                    console.log(`[CSV] Data preview: ${csvData.substring(0, 100).replace(/\n/g, '\\n')}...`);
+                } else {
+                    console.log(`[CSV] WARNING: Received empty data from URL`);
+                }
+                
+                if (!csvData || csvData.trim().length === 0) {
+                    throw new Error('Empty CSV data received');
+                }
+                
+                const csvIncludes = parseCSV(csvData);
+                console.log(`[CSV] Successfully parsed ${csvIncludes.length} aircraft from CSV`);
+                
+                if (csvIncludes.length > 0) {
+                    console.log(`[CSV] First parsed item: ${JSON.stringify(csvIncludes[0])}`);
+                }
+                
+                // Merge the CSV includes with the configuration includes
+                allIncludes = [...allIncludes, ...csvIncludes];
+                console.log(`[CSV] Total includes after merge: ${allIncludes.length}`);
+            } catch (error) {
+                console.error(`[CSV] ERROR: ${error.message}`);
+                console.error(`[CSV] Stack trace: ${error.stack}`);
+                // Continue with just the configuration includes
+            }
+        }
+        
+        // Build the lookup maps from all includes
+        for (const include of allIncludes) {
             // Add to registration map
             if (include.registration) {
                 includesMap.set(include.registration.toLowerCase().trim(), include);
