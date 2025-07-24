@@ -715,8 +715,8 @@ export default class Task extends ETL {
             }
             
             // If not found by ICAO hex, try to find by registration
-            if (!include) {
-                include = includesMap.get(id);
+            if (!include && ac.r) {
+                include = includesMap.get(ac.r.toLowerCase().trim());
             }
             
             if (include) {
