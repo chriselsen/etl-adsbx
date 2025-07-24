@@ -63,6 +63,11 @@ const VALID_ICON_GROUPS = new Set([
     'EMS_FIXED_WING',
     'EMS_ROTOR',
     'EMS_ROTOR_RESCUE',
+    'FED_FIXED_WING',
+    'FED_FIXED_WING_ISR',
+    'FED_ROTOR',
+    'FED_ROTOR_RESCUE',
+    'FED_UAS',
     'FIRE_AIR_ATTACK',
     'FIRE_AIR_TANKER',
     'FIRE_INTEL',
@@ -80,13 +85,8 @@ const VALID_ICON_GROUPS = new Set([
     'LE_ROTOR',
     'LE_ROTOR_RESCUE',
     'LE_UAS',
-    'FED_FIXED_WING',
-    'FED_FIXED_WING_ISR',
-    'FED_ROTOR',
-    'FED_ROTOR_RESCUE',
-    'FED_UAS',
-    'MIL_ROTOR_MED_RESCUE',
-    'MIL_ROTOR_ISR_RESCUE'
+    'MIL_ROTOR_ISR_RESCUE',
+    'MIL_ROTOR_MED_RESCUE'
 ]);
 
 /**
@@ -159,6 +159,11 @@ const Env = Type.Object({
                 'EMS_FIXED_WING',
                 'EMS_ROTOR',
                 'EMS_ROTOR_RESCUE',
+                'FED_FIXED_WING',
+                'FED_FIXED_WING_ISR',
+                'FED_ROTOR',
+                'FED_ROTOR_RESCUE',
+                'FED_UAS',
                 'FIRE_AIR_ATTACK',
                 'FIRE_AIR_TANKER',
                 'FIRE_INTEL',
@@ -176,13 +181,8 @@ const Env = Type.Object({
                 'LE_ROTOR',
                 'LE_ROTOR_RESCUE',
                 'LE_UAS',
-                'FED_FIXED_WING',
-                'FED_FIXED_WING_ISR',
-                'FED_ROTOR',
-                'FED_ROTOR_RESCUE',
-                'FED_UAS',
-                'MIL_ROTOR_MED_RESCUE',
-                'MIL_ROTOR_ISR_RESCUE'
+                'MIL_ROTOR_ISR_RESCUE',
+                'MIL_ROTOR_MED_RESCUE'
             ]
         }),
         cot_type: Type.Optional(Type.String({ description: 'Custom CoT type. E.g. a-f-A-M-F-C-H' })),
