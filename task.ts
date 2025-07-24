@@ -642,16 +642,16 @@ export default class Task extends ETL {
             }
         }
 
-        // Map to store processed aircraft data by ID (registration or flight number)
+        // Map to store processed aircraft data by ID (ICAO hex code)
         const ids = new Map();
 
         // Process each aircraft from the API response
         for (const ac of body.ac) {
-            if (!ac.flight && !ac.r) continue;
+            if (!ac.hex) continue;
 
             // No longer filtering tower vehicles
 
-            const id = (ac.r || ac.flight).toLowerCase().trim();
+            const id = ac.hex.toLowerCase().trim();
             const coordinates = [ac.lon, ac.lat];
 
             // Handle altitude conversion from feet to meters with proper type checking
@@ -823,9 +823,7 @@ export default class Task extends ETL {
                 metadata: ac,
                 remarks: buildRemarks(ac)
             };
-            
-            // Emergency alert feature removed
-            
+                        
             ids.set(id, {
                 id: id,
                 type: 'Feature',
