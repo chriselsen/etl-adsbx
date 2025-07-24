@@ -1012,104 +1012,105 @@ export default class Task extends ETL {
             }
             
             // Process aircraft that match by registration
-            for (const [id, include] of includesMap.entries()) {
-                if (ids.has(id) && !processedIds.has(id)) {
-                    const feat = ids.get(id);
-
-                    if (include && include.ICAO_hex) {
-                        // No need to update callsign here as we're now matching on hex code
-                    }
-
-                    // Update metadata and remarks for group
-                    if (include && include.group) {
-                        feat.properties.metadata.group = include.group;
-                        
-                        // Update remarks with the new group
-                        if (include.group.trim() !== 'None' && include.group.trim() !== 'UNKNOWN') {
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Group': include.group.replace(/_/g, '-').trim() }
-                            );
-                        } else {
-                            // Remove Group field if None/UNKNOWN
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Group': null }
-                            );
-                        }
-                    }
-
-                    // Update metadata and remarks for comments
-                    if (include && include.comments !== undefined) {
-                        feat.properties.metadata.comments = include.comments;
-                        
-                        // Update remarks with the new comments
-                        if (include.comments) {
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Comments': include.comments.trim() }
-                            );
-                        } else {
-                            // Remove Comments field if empty
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Comments': null }
-                            );
-                        }
-                    }
+            for (const [registration, include] of includesMap.entries()) {
+                // Look for aircraft with matching registration in our processed data
+                for (const [id, feat] of ids.entries()) {
+                    if (processedIds.has(id)) continue; // Skip already processed
                     
-                    // Update callsign if provided
-                    if (include && include.callsign !== undefined) {
-                        const ac = feat.properties.metadata;
-                        let finalCallsign = include.callsign;
-                        
-                        // Check if the callsign contains $CALLSIGN placeholder
-                        if (include.callsign.includes('$CALLSIGN')) {
-                            // Replace $CALLSIGN with the actual flight callsign from the API
-                            const apiCallsign = ac.flight ? ac.flight.trim() : '';
-                            finalCallsign = include.callsign.replace('$CALLSIGN', apiCallsign);
+                    const ac = feat.properties.metadata;
+                    // Check if this aircraft's registration matches
+                    if (ac.r && ac.r.toLowerCase().trim() === registration) {
+                        // Update metadata and remarks for group
+                        if (include.group) {
+                            feat.properties.metadata.group = include.group;
+                            
+                            // Update remarks with the new group
+                            if (include.group.trim() !== 'None' && include.group.trim() !== 'UNKNOWN') {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Group': include.group.replace(/_/g, '-').trim() }
+                                );
+                            } else {
+                                // Remove Group field if None/UNKNOWN
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Group': null }
+                                );
+                            }
                         }
-                        
-                        // Update the metadata with the processed callsign
-                        feat.properties.metadata.callsign = finalCallsign;
-                        
-                        // Update remarks with the callsign
-                        if (finalCallsign) {
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Callsign': finalCallsign.trim() }
-                            );
-                        } else {
-                            // Remove Callsign field if empty
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Callsign': null }
-                            );
-                        }
-                    }
-                    
-                    // Update agency if provided
-                    if (include && include.agency !== undefined) {
-                        feat.properties.metadata.agency = include.agency;
-                        
-                        // Update remarks with the agency
-                        if (include.agency) {
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Agency': include.agency.trim() }
-                            );
-                        } else {
-                            // Remove Agency field if empty
-                            feat.properties.remarks = updateRemarks(
-                                feat.properties.remarks, 
-                                { 'Agency': null }
-                            );
-                        }
-                    }
 
-                    // Add to features array and mark as processed
-                    processedIds.add(id);
-                    features.push(feat);
+                        // Update metadata and remarks for comments
+                        if (include.comments !== undefined) {
+                            feat.properties.metadata.comments = include.comments;
+                            
+                            // Update remarks with the new comments
+                            if (include.comments) {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Comments': include.comments.trim() }
+                                );
+                            } else {
+                                // Remove Comments field if empty
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Comments': null }
+                                );
+                            }
+                        }
+                        
+                        // Update callsign if provided
+                        if (include.callsign !== undefined) {
+                            let finalCallsign = include.callsign;
+                            
+                            // Check if the callsign contains $CALLSIGN placeholder
+                            if (include.callsign.includes('$CALLSIGN')) {
+                                // Replace $CALLSIGN with the actual flight callsign from the API
+                                const apiCallsign = ac.flight ? ac.flight.trim() : '';
+                                finalCallsign = include.callsign.replace('$CALLSIGN', apiCallsign);
+                            }
+                            
+                            // Update the metadata with the processed callsign
+                            feat.properties.metadata.callsign = finalCallsign;
+                            
+                            // Update remarks with the callsign
+                            if (finalCallsign) {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Callsign': finalCallsign.trim() }
+                                );
+                            } else {
+                                // Remove Callsign field if empty
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Callsign': null }
+                                );
+                            }
+                        }
+                        
+                        // Update agency if provided
+                        if (include.agency !== undefined) {
+                            feat.properties.metadata.agency = include.agency;
+                            
+                            // Update remarks with the agency
+                            if (include.agency) {
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Agency': include.agency.trim() }
+                                );
+                            } else {
+                                // Remove Agency field if empty
+                                feat.properties.remarks = updateRemarks(
+                                    feat.properties.remarks, 
+                                    { 'Agency': null }
+                                );
+                            }
+                        }
+
+                        // Add to features array and mark as processed
+                        processedIds.add(id);
+                        features.push(feat);
+                        break; // Found a match, no need to check other aircraft
+                    }
                 }
             }
         } else {
